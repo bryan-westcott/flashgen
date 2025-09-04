@@ -1,0 +1,37 @@
+# How to run:
+# docker-compose up -d && docker-compose logs -f pull-llm
+
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports: ["11434:11434"]
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    volumes:
+      - ./data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:11434/api/tags"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  # runs once, shares the same volume, then exits
+  pull-llm:
+    image: ollama/ollama:latest
+    depends_on: 
+      ollama:
+        condition: service_healthy
+    environment:
+      # Important: talk to ollama "service name" not localhost
+      - OLLAMA_HOST=ollama:11434
+    volumes:
+      - ./data:/root/.ollama
+    # llama3.2 max for home, do NOT use llama3.3
+    # qwen2.5:1.5b-instruct for 4GB GPU
+    entrypoint: ["/bin/sh","-lc","ollama pull qwen2.5:1.5b-instruct || true"]
+    restart: "no"
+
