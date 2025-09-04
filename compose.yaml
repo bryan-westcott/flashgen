@@ -1,7 +1,9 @@
 # How to run:
-#   docker-compose up -d && docker-compose logs -f pull-llm
+#   docker compose up -d && docker-compose logs -f pull-llm
 # Check models
-#   docker-compose exec ollama ollama list
+#   docker compose exec ollama ollama list
+# Check GPU
+#   docker compose exec ollama nvidia-smi
 # Check connectivity from remote host on *SAME LAN*
 #   curl http://<hostname>.local:11434/api/tags
 
@@ -15,6 +17,7 @@ services:
       - OLLAMA_HOST=0.0.0.0:11434
     volumes:
       - ./data:/root/.ollama
+    gpus: all
     healthcheck:
       # returns 0 once the server is accepting commands
       test: ["CMD", "ollama", "list"]
