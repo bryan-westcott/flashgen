@@ -1,0 +1,52 @@
+http:
+  routers:
+    # Require a static API credential for this route
+    #
+    # Environment variable:
+    #   OLLAMA_API_KEY
+    #
+    # Route:
+    #   https://<traefik_proxy_address>:<shared_traefik_ssl_port>/ollama
+    #
+    # HTTP header formats accepted:
+    #   • OpenAI / Python SDK style:
+    #       Header name: Authorization
+    #       Header value: Bearer <OLLAMA_API_KEY>
+    #
+    #   • Azure API-key style:
+    #       Header name: api-key
+    #       Header value: <OLLAMA_API_KEY>
+    #
+    # Notes:
+    #   • Header field names (e.g. "Authorization", "api-key") are
+    #     case-insensitive by HTTP spec; Traefik handles this automatically.
+    #   • The "Bearer" scheme identifier is case *sensitive* in this setup
+    #   • The credential itself (<OLLAMA_API_KEY>) is case-sensitive
+    #     and must match exactly.
+    #   • Go template helper for env-vars must be used here; shell-style
+    #     substitution is not supported in Traefik dynamic config.
+    #   • Traefik authenticates requests *on behalf of Ollama*, since Ollama
+    #     itself does not implement authentication.
+    ollama-bearer:
+      # Using prefix https://<fqdn>:<port>/ollama with 'Authorization: Bearer <api-key>'
+      rule: Host(`{{ env "SERVER_FQDN" }}`) && PathPrefix(`/ollama`) && Header(`Authorization`, `Bearer {{ env "OLLAMA_API_KEY" }}`) # yamllint disable-line rule:line-length
+      entryPoints: [websecure]
+      tls: {} # use the certs from your tls.yaml
+      middlewares: [ollama-strip]
+      service: ollama
+    ollama-apikey:
+      # Using prefix https://<fqdn>:<port>/ollama with 'api-key: <api-key>'
+      rule: Host(`{{ env "SERVER_FQDN" }}`) && PathPrefix(`/ollama`) && Header(`api-key`, `{{ env "OLLAMA_API_KEY" }}`) # yamllint disable-line rule:line-length
+      entryPoints: [websecure]
+      tls: {} # use the certs from your tls.yaml
+      middlewares: [ollama-strip]
+      service: ollama
+  middlewares:
+    ollama-strip:
+      stripPrefix:
+        prefixes: ["/ollama"]
+  services:
+    ollama:
+      loadBalancer:
+        servers:
+          - url: http://ollama:11434

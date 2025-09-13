@@ -1,0 +1,5 @@
+# ./dynamic/tls.yml — Traefik static certificate configuration
+tls:
+  certificates:
+    - certFile: /certs/lan.pem # What: server certificate
+      keyFile: /certs/lan-key.pem # What: private key (no passphrase)
