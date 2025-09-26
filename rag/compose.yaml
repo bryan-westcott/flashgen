@@ -1,0 +1,215 @@
+# compose.yaml — LAN-only TLS reverse proxy with Traefik, hardened Qdrant, and Ollama
+#
+# TODO: convert to labels for better k3s conversion via kompose
+# Steps:
+# 1. run certgen.sh
+#     * Generate certificates in /cert
+# 2. sudo cp ./certs/lan.pem /usr/local/share/ca-certificates/lan.crt
+# 3. sudo update-ca-certificates
+#     * Trust the cert (on BOTH server and remote client)
+# 4. run authgen.sh
+#     * Generate random authentication API keys for both qdrant and ollama
+# 5. docker compose --env-file .env up -d
+#     * Bring up the system
+#     * Note: precheck will fail if all the above is not right
+# 6. ./test_stack.sh
+#     * check for expected behavior of endpoints
+#     * Note: will print exact curl commands to debug failures
+#     * Note: https://localhost:4443/qdrant/readyz will work without auth
+#     *       other qdrant endpoints require authentication token
+#     * Note: ALL ollama endpoints require auth as traefik authenticates
+services:
+  #
+  # ---------------------------------------------------------------------------
+  # precheck - check that all certs and auth tokens are set
+  # ---------------------------------------------------------------------------
+  precheck:
+    image: alpine:3.20
+    command:
+      - sh
+      - -eu
+      - -c
+      - |
+        [ -n "${OLLAMA_API_KEY:-}" ] || { echo "Error: OLLAMA_API_KEY not set. Run ./authgen.sh" >&2; exit 1; }
+        [ -n "${QDRANT_API_KEY:-}" ] || { echo "Error: QDRANT_API_KEY not set. Run ./authgen.sh" >&2; exit 1; }
+        CERT="/certs/$(hostname).local.pem"
+        KEY="/certs/$(hostname).local.key.pem"
+        [ -n "${SERVER_FQDN:-}" ] || { echo "Error: SERVER_FQDN not set. Run ./certgen.sh" >&2; exit 1; }
+        [ -f "$$CERT" ] || { echo "Error: Missing $$CERT. Run ./certgen.sh" >&2; exit 1; }
+        [ -f "$$KEY"  ] || { echo "Error: Missing $$KEY.  Run ./certgen.sh" >&2; exit 1; }
+        echo "Precheck OK"
+    environment:
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - SERVER_FQDN=${SERVER_FQDN}
+    volumes:
+      - ./certs:/certs:ro
+    uts: host # rely on $hostname of host for cert names
+  #
+  # ---------------------------------------------------------------------------
+  # Traefik - reverse proxy for TLS termination, API-key validation
+  # ---------------------------------------------------------------------------
+  # Note: pass through api-key to qdrant, authenticate "bearer" api key since ollama won't
+  # Note: provide TLS termination for self-signed certs since TLS not supported by either ollama/qdrant
+  traefik: # Reverse proxy / TLS terminator for all services
+    image: traefik:v3.1 # Traefik v3 (active LTS at time of writing)
+    container_name: traefik # Explicit container name for easier debugging
+    restart: unless-stopped # Keep running across host restarts unless explicitly stopped
+    uts: host # Share hostname with host
+    environment:
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY} # Provide the expected OpenAI-style bearer token to middleware
+      - QDRANT_API_KEY=${QDRANT_API_KEY} # Provide the Qdrant API key to the middleware that adds headers
+      - SERVER_FQDN=${SERVER_FQDN} # Provide hostname of docker host with .local suffix for mDNS from certgen.sh
+    networks: # Traefik must reach both general app services and the isolated qdrant net
+      - ollama # Isolated/internal network that Ollama lives on (no external egress)
+      - qdrant # Isolated/internal network that Qdrant lives on (no external egress)
+    ports:
+      # - "443:443" # Public HTTPS entrypoint for path-based routes (/ollama, /qdrant, /qdrant-grpc)
+      - "4443:443" # non-privileged public HTTPS entrypoint for path-based routes (/ollama, /qdrant, /qdrant-grpc)
+      - "8443:8443" # Public HTTPS entrypoint dedicated to "pure gRPC" (no path prefix)
+      - "8082:8082" # For ping-based healthcheck
+    command: # Static Traefik configuration (dynamic TLS certs loaded from /dynamic)
+      - --providers.docker=true # Discover backends and routing rules from Docker labels
+      - --providers.docker.exposedbydefault=false # Security: only services with traefik.enable=true labels are exposed
+      - --entrypoints.websecure.address=:443 # Define HTTPS entrypoint on port 443 (name: "websecure")
+      - --providers.file.directory=/dynamic # Load additional config (TLS cert references) from /dynamic
+      - --providers.file.watch=true # Watch the /dynamic folder for live reloads (cert/key changes)
+      - --log.level=INFO # Helpful while debugging
+      - --accesslog=true # To see requests
+      - --ping # Enable ping-based healthcheck
+      - --ping.entryPoint=ping # For ping-based healthcheck
+      - --entrypoints.ping.address=:8082 # For ping-based healthcheck
+      - --accesslog.fields.headers.defaultmode=drop # Drop all headers by defaul, but if any slip through...
+      - --accesslog.fields.headers.names.Authorization=redact
+      - --accesslog.fields.headers.names.api-key=redact
+      - --accesslog.fields.headers.names.X-Api-Key=redact # (belt & suspenders)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Read-only Docker socket so Traefik can read service labels
+      - ./dynamic:/dynamic:ro # Mount dynamic config (e.g., tls.yml) into the container
+      - ./certs:/certs:ro # Mount LAN cert/key generated by your script (used by tls.yml)
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8082/ping"]
+      # test: ["CMD-SHELL", "wget -qO- --no-check-certificate https://localhost:443/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
+    depends_on:
+      precheck:
+        condition: service_completed_successfully
+  #
+  # ---------------------------------------------------------------------------
+  # QDRANT - vector database
+  # ---------------------------------------------------------------------------
+  # Note: hardened per vendor guidance
+  qdrant:
+    image: qdrant/qdrant:latest-unprivileged # Non-root variant recommended by Qdrant ("-unprivileged")
+    container_name: qdrant # Explicit name
+    restart: unless-stopped # Keep DB up unless intentionally stopped
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY} # Enable Qdrant's built-in API key authentication system
+      - QDRANT__SERVICE__HTTP_PORT=6333 # Explicitly set HTTP port (for clarity/consistency
+      - QDRANT__SERVICE__GRPC_PORT=6334 # Explicitly set gRPC port (h2c upstream
+    networks:
+      - qdrant # Only attach to the isolated network (no direct Internet egress)
+    expose:
+      - "6333" # Expose HTTP port (internal to Compose networks only)
+      - "6334" # Expose gRPC (h2c) port (internal to Compose networks only)
+    user: "1000" # HARDENING: run as non-root user ID 1000
+    read_only: true # HARDENING: root filesystem is read-only
+    tmpfs:
+      - /tmp # HARDENING: ephemeral writable scratch area (required by some libs/tools)
+    volumes:
+      - qdrant-data:/qdrant/storage # Persistent storage volume (Qdrant data) - qdrant-snaps:/qdrant/snapshots
+      - qdrant-snaps:/qdrant/snapshots # Persistent snapshots volume (backup/restore)
+    gpus: all
+    healthcheck: # Healthcheck with API key, since image has no curl for healthz
+      test:
+        - CMD
+        - bash
+        - -c
+        - |
+          set -e # fail on any error, even without pipe
+          exec 3<>/dev/tcp/127.0.0.1/6333 # open FD3
+          printf 'GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
+          grep -q 'HTTP/1.1 200' <&3 # look for 200
+          exec 3>&-  # close FD 3 opened above
+      # test: ["CMD", "/qdrant", "--version"] # simpler test
+      interval: 30s
+      timeout: 2s
+      retries: 1
+      start_period: 5s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=rag_qdrant" # pin the backend network
+      # --- Service (maps to http://qdrant:6333) ---
+      - "traefik.http.services.qdrant-svc.loadbalancer.server.port=6333"
+      - "traefik.http.services.qdrant-svc.loadbalancer.server.scheme=http"
+      # --- Middleware: strip the /qdrant prefix ---
+      - "traefik.http.middlewares.qdrant-strip.stripprefix.prefixes=/qdrant"
+      # --- Router: https://$SERVER_FQDN/qdrant -> qdrant-svc (TLS via websecure) ---
+      - "traefik.http.routers.qdrant.rule=Host(`${SERVER_FQDN}`) && PathPrefix(`/qdrant`)"
+      - "traefik.http.routers.qdrant.entrypoints=websecure"
+      - "traefik.http.routers.qdrant.tls=true"
+      - "traefik.http.routers.qdrant.middlewares=qdrant-strip"
+      - "traefik.http.routers.qdrant.service=qdrant-svc"
+      - "traefik.http.routers.qdrant.priority=1000" # ensure we beat any generic routes
+      # Optionally pin a specific certresolver if you use ACME:
+      # - "traefik.http.routers.qdrant.tls.certresolver=myresolver"
+  # ---------------------------------------------------------------------------
+  # OLLAMA - runtime
+  # ---------------------------------------------------------------------------
+  # Note: uses HTTP API, so authentication/TLS provided by traefik
+  ollama:
+    image: ollama/ollama:latest # Latest public image
+    container_name: ollama # Explicit name
+    restart: unless-stopped # Keep running unless intentionally stopped
+    networks:
+      - ollama # General app network (Traefik will reach it here)
+    expose:
+      - "11434" # Expose API port to the network (not published to host)
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434 # Bind inside container on port 11434
+    volumes:
+      - ollama-data:/root/.ollama # Persist models/cache
+    gpus: all
+    healthcheck:
+      # returns 0 once the server is accepting commands
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=rag_ollama" # pin the backend network
+      # --- Service definition (maps to http://ollama:11434) ---
+      - "traefik.http.services.ollama-svc.loadbalancer.server.port=11434"
+      - "traefik.http.services.ollama-svc.loadbalancer.server.scheme=http"
+      # --- Middleware: strip the /ollama prefix before forwarding ---
+      - "traefik.http.middlewares.ollama-strip.stripprefix.prefixes=/ollama"
+      # --- Router 1: Authorization: Bearer <OLLAMA_API_KEY> ---
+      - "traefik.http.routers.ollama-bearer.rule=Host(`${SERVER_FQDN}`) && PathPrefix(`/ollama`) && Header(`Authorization`, `Bearer ${OLLAMA_API_KEY}`)" # yamllint disable-line rule:line-length
+      - "traefik.http.routers.ollama-bearer.entrypoints=websecure"
+      - "traefik.http.routers.ollama-bearer.tls=true"
+      - "traefik.http.routers.ollama-bearer.middlewares=ollama-strip"
+      - "traefik.http.routers.ollama-bearer.service=ollama-svc"
+      # --- Router 2: api-key: <OLLAMA_API_KEY> ---
+      - "traefik.http.routers.ollama-apikey.rule=Host(`${SERVER_FQDN}`) && PathPrefix(`/ollama`) && Header(`api-key`, `${OLLAMA_API_KEY}`)" # yamllint disable-line rule:line-length
+      - "traefik.http.routers.ollama-apikey.entrypoints=websecure"
+      - "traefik.http.routers.ollama-apikey.tls=true"
+      - "traefik.http.routers.ollama-apikey.middlewares=ollama-strip"
+      - "traefik.http.routers.ollama-apikey.service=ollama-svc"
+# ---------------------------------------------------------------------------
+# Shared resources
+# ---------------------------------------------------------------------------
+networks:
+  ollama: # Ollama-isolated network (Traefik + Ollama only)
+    driver: bridge # Single-host bridge (fast; isolated per namespace)
+  qdrant: # Qdrant-isolated network (Traefik + Qdrant only)
+    driver: bridge # Bridge network
+    internal: true # HARDENING: blocks external egress from containers on this network
+volumes:
+  qdrant-data: # Persistent data for Qdrant (collections, shards)
+  qdrant-snaps: # Persistent snapshots for backup/restore
+  ollama-data: # Persistent Ollama models/cache
