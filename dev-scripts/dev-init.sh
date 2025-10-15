@@ -2,11 +2,12 @@
 
 # Prep dev environment
 # 1. check if sourcing
-# 2. create project venv (if not exist)
-# 3. activate venv (and check that VIRTUAL_ENV var is set)
-# 4. sync dev/notebook dependencies
-# 5. install current project as an editable package
-# 6. register environment as jupyter kernel
+# 2. check for uv
+# 3. check for pyproject.toml
+# 4. check for active venv that matches project_root (not other repo)
+# 5. create venv if it doesn't exist
+# 6. activate venv if not already active
+# 7. register environment as jupyter kernel
 
 # This script must be sourced, so these checks are invalid
 # shellcheck disable=SC2317,SC1091
@@ -21,11 +22,18 @@
 # Note: this has to be a subshell better trap error in the dev script itself
 dev_init() {
 
+  # Temporarily disable interactive history & file appends to avoid pollution
+  set +o history
+
   # Save current options
   local old_opts
   old_opts=$(set +o)
-  # Always restore options when this function exits
-  trap 'eval "$old_opts"; trap - ERR; trap - EXIT' EXIT
+
+  # Safely remove traps
+  # Always restore options and history recording when this function exits
+  # Note: will handle even if old_opts is unset (which can leave stale
+  #       traps in bash otherwise)
+  trap 'set +u; trap - RETURN ERR; [ "${old_opts+x}" ] && eval "$old_opts"; set -o history' RETURN
 
   # Set temp options
   # -u (nounset): treat unset variables as an error
@@ -50,7 +58,7 @@ dev_init() {
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
   cd "$PROJECT_ROOT" || {
-    echo "Error: could not cd to $PROJECT_ROOT" >&2
+    echo "❌ Could not cd to $PROJECT_ROOT" >&2
     return 1 2>/dev/null || true
   }
 
@@ -61,60 +69,72 @@ dev_init() {
     { return 1 2>/dev/null; } || exit 1
   fi
 
-  # extract project name (first match of `name = "..."`)
-  PROJECT_NAME="$(grep -m1 '^[[:space:]]*name[[:space:]]*=' "$PYPROJECT_FILE" \
-      | sed -E 's/.*name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
+
+  # -- Check for notebook ---
 
   # check if notebook section in pyproject.toml
   if grep -q '^[[:space:]]*notebook[[:space:]]*=' "$PYPROJECT_FILE"; then
+    echo "📓 Detected 'notebook' group in $PYPROJECT_FILE"
     HAS_NOTEBOOK=1
   else
     echo "ℹ️  No 'notebook' group found in $PYPROJECT_FILE; skipping Jupyter setup."
     HAS_NOTEBOOK=0
   fi
 
-  echo "📦 Creating virtual environment with uv..."
-  uv venv
+  # -- Initialize ---
 
-  echo "🔗 Activating virtual environment..."
-  if ! source .venv/bin/activate; then
-    echo "❌ Failed to activate .venv"
-    return 1 2>/dev/null || exit 1
+  echo "📦 Dev init (create venv and/or sync as needed)"
+  REPO_VENV=".venv"
+  if [[ ! -d "$REPO_VENV" ]]; then
+    echo "...❄️ No venv found at $REPO_VENV — cold start"
+    if [[ ! -f "uv.lock" ]]; then
+      echo "...🆕 No uv.lock found — creating venv first"
+      # (Note: there's no '--dev' flag for 'uv venv'; dev/test deps are handled during 'uv sync')
+      if ! uv venv "$REPO_VENV"; then
+        echo "❌ Failed to create $REPO_VENV" >&2
+        { return 1 2>/dev/null; } || exit 1
+      fi
+    else
+      echo "...🔒 uv.lock found — will let 'uv sync' create venv implicitly"
+    fi
+
+    # One sync pass to populate venv (frozen if lock exists)
+    UV_SYNC_ARGS=()
+    [[ "${HAS_NOTEBOOK:-0}" -eq 1 ]] && UV_SYNC_ARGS+=(--group notebook)
+    [[ -f uv.lock ]] && UV_SYNC_ARGS+=(--frozen)
+    echo "🔄 Syncing with args: ${UV_SYNC_ARGS[*]}"
+    uv sync "${UV_SYNC_ARGS[@]}"
+    echo "...✅ Sync successful"
+
+  else
+    echo "...♻️  Venv exists at $REPO_VENV — reusing existing venv without syncing"
   fi
-  echo "VIRTUAL_ENV=${VIRTUAL_ENV?}"
 
-
-  #echo "📋 Syncing dependencies from pyproject.toml..."
-  if [ "$HAS_NOTEBOOK" -ne 1 ]; then
-    echo "📋 Syncing base dev dependencies (no notebook)..."
-    if ! uv sync --dev; then
-      echo "❌ Failed to sync base dev dependencies" >&2
+  # --- Activation phase ---
+  #
+  echo "⚡ Activating venv (if needed)"
+  if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    # If a venv is already active, it must be the project .venv
+    if [ "$(readlink -f -- "$VIRTUAL_ENV")" != "$(readlink -f -- "$REPO_VENV")" ]; then
+      echo "❌ Active VIRTUAL_ENV differs from project .venv" >&2
+      echo "    active: $VIRTUAL_ENV" >&2
+      echo "    expect: $REPO_VENV" >&2
       { return 1 2>/dev/null; } || exit 1
+    else
+      echo "...🟢 Already active: $VIRTUAL_ENV"
     fi
   else
-    echo "📋 Syncing dev and notebook dependencies..."
-    if ! uv sync --dev --group notebook; then
-      echo "❌ Failed to sync notebook dependencies" >&2
+    if ! source "$REPO_VENV/bin/activate"; then
+      echo "❌ Failed to activate $REPO_VENV" >&2
       { return 1 2>/dev/null; } || exit 1
     fi
+    echo "...✅ Activated: $VIRTUAL_ENV"
   fi
 
-  # install editable python code, but only if src/<name> exists
-  if [ -n "$PROJECT_NAME" ] && [ -d "$PROJECT_ROOT/src/$PROJECT_NAME" ]; then
-    echo "🔧 Installing project in editable mode..."
-    if ! uv pip install -e .; then
-      echo "❌ Failed to install editable project" >&2
-      { return 1 2>/dev/null; } || exit 1
-    fi
-  else
-    echo "ℹ️  No src/$PROJECT_NAME directory found; skipping editable install."
-  fi
+  # --- Register jupyter notebook ---
 
   # register jupyter kernel, but only if notebook in pyproject.toml
   if [ "$HAS_NOTEBOOK" -eq 1 ]; then
-    #echo "🧹 Removing default 'python3' kernel if present..."
-    #jupyter kernelspec remove -y python3 || true
-
     KERNEL_NAME="$(basename "$PROJECT_ROOT")"
     echo "🧠 Registering Jupyter kernel: ${KERNEL_NAME?}..."
     if ! uv run ipython kernel install \
@@ -127,20 +147,21 @@ dev_init() {
       echo "   Try: uv sync --dev --group notebook" >&2
       { return 1 2>/dev/null; } || true  # prevent killing ssh if sourced
     fi
-    echo "Note: kernels persist outside of uv in '~/.local/share/jupyter/kernels/'"
-    echo "Launch Jupyter with:"
-    echo "  uv run --with notebook jupyter lab"
-    echo "and select '${KERNEL_NAME?}' kernel"
+    echo "Warning: kernels persist outside of uv in '~/.local/share/jupyter/kernels/'"
+    echo "Warning: kernels may collide if same project is initialized elsewhere"
+    echo "Launch with: "
+    echo "    uv run --with notebook jupyter lab"
+    echo "Choose: '${KERNEL_NAME}' kernel"
+    echo "Warning: jupyter bug may require click in file browser before kernel can be selected"
+    echo "...✅ Registered jupyter kernel ${KERNEL_NAME}"
   else
-    echo "ℹ️  No notebook group detected — no kernel to add or register."
+    echo "...ℹ️  No notebook group detected — no kernel to add or register."
   fi
 
-  echo "✅ Dev environment ready"
+  # ---- Done ----
 
-    # Explicitly clear traps on success (EXIT will also run, but this makes it obvious)
-  trap - ERR
-  trap - EXIT
-  eval "$old_opts"
+  echo "✅ Dev environment ready"
+  # Note: trap will restore old opts and history recording
 
 }
 
