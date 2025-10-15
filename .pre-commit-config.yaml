@@ -139,7 +139,7 @@ repos:
   # ---------------------------------------------------------
   # Note: ruff installed in pyproject dev group
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.13.2
+    rev: v0.14.0
     hooks:
       - id: ruff
         name: ruff
@@ -207,8 +207,9 @@ repos:
     rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        files: \.(md|json|toml)$
-        exclude: (^uv.lock|\.ipynb$)
+        types_or: [markdown, json, toml]
+        exclude: \.ipynb$
+        args: [--ignore-unknown]
   #
   # ---------------------------------------------------------
   # docformatter - formats docstrings to follow PEP 257
@@ -243,7 +244,7 @@ repos:
   # yamlfmt - format yaml files
   # ---------------------------------------------------------
   - repo: https://github.com/google/yamlfmt
-    rev: v0.17.2 # pick a tagged release
+    rev: v0.18.0 # pick a tagged release
     hooks:
       - id: yamlfmt
   #
@@ -284,7 +285,7 @@ repos:
   # uv-pre-commit - ensure lock file is up to date
   # ---------------------------------------------------------
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.22
+    rev: 0.9.2
     hooks:
       - id: uv-lock
   #
