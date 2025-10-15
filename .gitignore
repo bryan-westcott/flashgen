@@ -13,7 +13,6 @@ clipseg-cache/*
 blip-proc-cache/*
 blip-cache/*
 .ipynb_checkpoints/*
-*.ipynb
 trained_models/*
 temp_in/*
 */.ipynb_checkpoints/*
@@ -37,3 +36,4 @@ lint_result.txt
 
 certs/
 .env
+*.pem
