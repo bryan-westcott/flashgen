@@ -247,6 +247,7 @@ repos:
     rev: v0.18.0 # pick a tagged release
     hooks:
       - id: yamlfmt
+        types_or: [yaml]
   #
   # ---------------------------------------------------------
   # yamllint - check yaml files
