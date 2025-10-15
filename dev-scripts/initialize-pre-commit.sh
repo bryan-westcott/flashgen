@@ -12,9 +12,6 @@ PATH="$PATH:${BASH_DIR}"
 # (BASH_DIR is dev-scripts when running locally)
 PATH="$PATH:${BASH_DIR}/../scripts"
 
-# some tools come from uv
-uv sync --dev --group notebook --frozen
-
 # node-based tools
 sudo apt install npm
 prettier_version=$(extract-tool-version-from-pyproject-toml.sh prettier)
