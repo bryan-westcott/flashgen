@@ -174,4 +174,4 @@ Together they provide a production-like dev environment for building and testing
 
 ## 📜 License
 
-MIT — intended for local development, testing, and educational use.
+Apache 2.0
