@@ -1,11 +1,11 @@
 # ⚡ FlashGen
 
-**FlashGen** is a lightweight, self-contained RAG micro-stack for local or
+**FlashGen** is a lightweight, self-contained GenAI micro-stack for local or
 small-team GenAI experiments. It runs **Ollama + Qdrant** behind a **Traefik**
 reverse proxy with LAN-TLS, and includes a parallel `notebook/` folder showing
 how to prompt it from Python/Jupyter like you would any LLM service.
 
-Think of it as your **“RAG-in-a-box”**: fast, local, secure, and easy to hack
+Think of it as your **“GenAI-in-a-box”**: fast, local, secure, and easy to hack
 on.
 
 ---
@@ -97,7 +97,7 @@ If testing from remote client (on LAN):
 
 ---
 
-## 4) Python call (without global trust on local LAN)
+### 5) Python call (without global trust on local LAN)
 
 **NOTE:** In most cases it is **not** necessary to install and trust the CA
 bundle system-wide. A more secure local approach is to verify with a specific
@@ -127,7 +127,7 @@ Note: tests can be run
 
 ---
 
-## 💻 Using from Python/Jupyter
+## 📓 Using from Python/Jupyter
 
 See the `notebook/` folder for examples that:
 
@@ -156,7 +156,7 @@ Together they provide a production-like dev environment for building and testing
 
 ---
 
-## 🛠 Tips & gotchas
+## 💡 Tips & gotchas
 
 - Use the same `hostname.local` everywhere so cert CN/SANs match.
 - Resolving `<hostname>.local` requires mDNS, check it with ping
