@@ -24,7 +24,6 @@ temp_in/*
 *.bak
 token.txt
 
-notebooks
 *.egg-info
 
 package-lock.json
