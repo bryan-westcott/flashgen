@@ -174,4 +174,4 @@ Together they provide a production-like dev environment for building and testing
 
 ## 📜 License
 
-Apache 2.0
+Apache 2.0, see LICENSE and NOTICE files.
