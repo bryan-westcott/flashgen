@@ -80,16 +80,11 @@ curl -k https://$(hostname).local/ollama/api/tags
 curl -k https://$(hostname).local/qdrant/collections
 ```
 
+---
+
 Add `-k` only when testing self-signed certs.
 
 ### 4) Extended tests
-
-If testing from remote client (on LAN):
-
-- make certs subdirectory
-  - `mkdir -p ./certs`
-- copy `*.pem` from server to local `./certs`
-- copy `.env` from server to PWD
 
 ```bash
 ./test_stack.sh
@@ -120,10 +115,6 @@ def self_signed_client(ollama_api_key: str, flashgen_server_name: str, ollama_po
 
 This pattern pins your client to the exact certificate/CA you intend to trust
 for this service, avoiding broad OS-level trust.
-
-5. Additional Tests
-
-Note: tests can be run
 
 ---
 
