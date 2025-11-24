@@ -163,7 +163,7 @@ Together they provide a production-like dev environment for building and testing
 
 ---
 
-## Responsible Use of Generative AI
+## ⚠️ Responsible Use of Generative AI
 
 This project includes tools that may generate text, code, images, or other outputs using machine-learning models.  
 Generated outputs may be inaccurate, biased, unsafe, or inappropriate for production use without careful human review.
