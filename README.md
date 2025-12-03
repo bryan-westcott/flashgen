@@ -12,14 +12,24 @@ on.
 
 ## 🌟 Features
 
+### Core system
 - **One-command startup** — bring up Ollama, Qdrant, and Traefik with `docker compose up -d`.
+- **Everything runs locally** — no external dependencies; fully self-contained in Docker.
 - **Local TLS certificates** — script-generated `.local` certs for HTTPS and gRPC.
-- **Secure proxying** — clean HTTPS endpoints for both REST and gRPC (443/8443).
-- **Python-friendly** — the `notebook/` examples treat FlashGen like a remote LLM API (but it’s all local).
-- **Minimal host deps** — everything runs in Docker.
-- **Ollama API key** — not a native Ollama feature.
-- **Extensible orchestration** — uses same Traefik reverse proxy as `k3s`/`k8s`.
-- **Extensible TLS** — avoid self-signed certificates with registered domain.
+
+### Structured-query + API compatibility
+- **Structured-Query Backend (OpenAI-compatible)** — exposes Ollama through an OpenAI-style `/v1` API, enabling structured queries, function calling, tools, and agentic workflows locally.
+- **Drop-in for OpenAI/Gemini clients** — usable through the `openai` Python package via `OpenAI(base_url=...)`, making FlashGen behave like a self-hosted LLM endpoint for RAG pipelines, agents, and tool-calling integrations.
+- **Python-friendly notebooks** — the `notebook/` folder demonstrates how to call FlashGen exactly like a hosted LLM service (chat, embeddings, functions, etc.).
+
+### Security + routing
+- **Secure proxying** — clean HTTPS endpoints for both REST and gRPC (443/8443), fronted by Traefik.
+- **Ollama API key support** — implemented via Traefik authentication (not natively supported by Ollama).
+- **Extensible TLS** — supports swapping `.local` certs for real domain certificates.
+
+### Orchestration + extensibility
+- **Extensible orchestration** — Traefik layout matches patterns used in `k3s` / `k8s`, making migration easy.
+- **Minimal host dependencies** — Docker + Compose is all you need.
 
 ---
 
