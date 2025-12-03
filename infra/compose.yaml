@@ -52,7 +52,7 @@ services:
   # Note: pass through api-key to qdrant, authenticate "bearer" api key since ollama won't
   # Note: provide TLS termination for self-signed certs since TLS not supported by either ollama/qdrant
   traefik: # Reverse proxy / TLS terminator for all services
-    image: traefik:v3.1 # Traefik v3 (active LTS at time of writing)
+    image: traefik:v3.6.2 # Traefik v3 (active LTS at time of writing)
     container_name: traefik # Explicit container name for easier debugging
     restart: unless-stopped # Keep running across host restarts unless explicitly stopped
     uts: host # Share hostname with host
