@@ -50,7 +50,13 @@ on.
 
 ## 🚀 Quickstart
 
-### 1) Generate a local TLS certificate (do this once per server)
+### 1) Run from `infra` directory
+
+```bash
+cd infra
+```
+
+### 2) Generate a local TLS certificate (do this once per server)
 
 ```bash
 ./certgen.sh
@@ -64,7 +70,7 @@ Creates:
 
 ---
 
-### 1) Generate OLLAMA and QDRANT API Keys (do this once per server)
+### 3) Generate OLLAMA and QDRANT API Keys (do this once per server)
 
 ```bash
 ./authgen.sh
@@ -84,7 +90,7 @@ Traefik and transport-protected via TLS.
 
 ---
 
-### 2) Start the stack
+### 4) Start the stack
 
 ```bash
 docker compose up -d
@@ -98,7 +104,7 @@ You’ll have:
 
 ---
 
-### 3) Smoke test
+### 5) Smoke test
 
 ```bash
 curl -k https://$(hostname).local/ollama/api/tags
@@ -109,7 +115,7 @@ curl -k https://$(hostname).local/qdrant/collections
 
 Add `-k` only when testing self-signed certs.
 
-### 4) Extended tests
+### 6) Extended tests
 
 ```bash
 ./test_stack.sh
@@ -117,7 +123,7 @@ Add `-k` only when testing self-signed certs.
 
 ---
 
-### 5) Python call (without global trust on local LAN)
+### 7) Python call (without global trust on local LAN)
 
 **NOTE:** In most cases it is **not** necessary to install and trust the CA
 bundle system-wide. A more secure local approach is to verify with a specific
