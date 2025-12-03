@@ -156,7 +156,7 @@ To start the notebook:
 - Activate the environment (and register Jupiter kernel) with:
   - `source dev-scripts/dev-init.sh`
 - Start Jupiter
-  - `uv run --with notebook jupyter lab`
+  - `uv run --with jupyterlab jupyter lab`
 - Select the `flashgen` kernel (registered by dev-init):
   - Note: you may have to click on file are due to Jupiter bug
 
