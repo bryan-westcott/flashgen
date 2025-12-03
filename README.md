@@ -33,6 +33,21 @@ on.
 
 ---
 
+## 🤔 Why FlashGen instead of Ollama alone or third-party services?
+
+- **Secure, production-like API surface** — FlashGen layers TLS, API keys, and a clean OpenAI-style `/v1` endpoint over Ollama. This enables structured queries, function calling, and agent workflows that plain Ollama cannot support.
+
+- **Local RAG stack included** — Qdrant is bundled and exposed securely, giving you embeddings, search, and retrieval without external services.
+
+- **Cost, privacy, and control** — Everything runs on your LAN, avoiding cloud usage fees, rate limits, and data leakage concerns.
+
+- **Faster iteration** — Local inference + local vector DB = minimal latency and full reproducibility.
+
+- **Easy to extend or scale** — The stack is fully containerized and uses Traefik patterns compatible with `k3s`/`k8s`, allowing seamless growth from a single-node lab setup to multi-service or cluster deployments.
+
+
+---
+
 ## 🚀 Quickstart
 
 ### 1) Generate a local TLS certificate (do this once per server)
